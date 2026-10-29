@@ -312,7 +312,9 @@ SQL分类
   - - 左外连接：查左表的所有数据，以及两张表交集部分数据
 
     - - ~~~sql
-        SELECT 字段列表 FROM 表1 LEFT [OUTER] JOIN 表2 ON 条件;
+        SELECT 字段列表 FROM 表1 LEFT [OUTER] JOIN 表2 ON 连接条件;
+        -- 如果on中写了一个过滤条件，表中未满足过滤条件的数据不会消失，但可能导致出现部分字段为null
+        -- 如age>40 and aid = id，如果age<=40,则这条数据会存在，但是对于右表的字段会显示未null
         ~~~
 
       - ​
@@ -343,39 +345,125 @@ SQL分类
 
   - ​
 
-- 子查询
+- 子查询(嵌套子查询)
+
+- - 标量子查询（子查询结果为单个值）
+  - 列子查询（结果为一列）
+  - 行子查询（结果为一行）
+  - 表子查询（结果为多行多列）
+  - 子查询位置可以在select 。。。  |   from 。。。| where 。。。
 
 ~~~sql
 SELECT * FROM T1 WHERE COLUMN1=(SELECT column1 FROM T2);
+
+-- 查找销售部的员工信息   标量子查询
+select * from emp where dept_id = (select id from dept where name = '销售');
+
+-- 查询方东白之后入职的员工
+select * from emp where entrydate > (select entrydate from emp where name = '方东白')
+
+
+-- 列子查询
+-- 查找‘销售’与‘市场’的员工
+select * from emp where dept_id IN(select id from dept where name IN('销售','市场'));
+
+-- 找到工资比财务所有人工资都高的员工
+select * from emp where salary > all( select salary from emp where dept_id = (select id from dept where name='财务'));
+
+-- 找到工资比研发部门任一员工工资高的员工
+select * from emp where salary > some(select salary from emp where dept_id = (select id from dept where name='研发'));
+
+-- 行子查询
+-- 查找与张无忌的薪资及直属领导相同的员工
+ select * from emp where (salary,managerid) = (select salary,managerid from emp where name = '张无忌');
+ 
+ -- 表子查询
+
 ~~~
 
+| 操作符（用于列子查询） | 描述                               |
+| ---------------------- | ---------------------------------- |
+| ANY                    | 子查询列表中，有任意一个满足的即可 |
+| SOME                   | 与SOME同等                         |
+| ALL                    | 子查询返回列表的所有值都得满足     |
 
+## 事务
 
+定义：是一组操作的集合，必须全部通过才能成功，否则算作失败。这些操作只有同时成功或者同时失败。
 
+示例表：
 
 ~~~sql
-CREATE TABLE `emp` (
-  `id` int NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `name` varchar(10) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '姓名',
-  `age` int DEFAULT NULL COMMENT '年龄',
-  `job` varchar(10) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '工作',
-  `salary` varchar(10) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '薪资',
-  `entrydate` date DEFAULT NULL COMMENT '入职时间',
-  `managerid` int DEFAULT NULL,
-  `dept_id` int DEFAULT NULL COMMENT '部门ID',
-  PRIMARY KEY (`id`),
-  KEY `fk_dept_id` (`dept_id`),
-  CONSTRAINT `fk_dept_id` FOREIGN KEY (`dept_id`) REFERENCES `dept` (`id`),
-  CONSTRAINT `emp_chk_1` CHECK (((`age` > 0) and (`age` < 125)))
-) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='部门表'
+create table account (
+  id int auto_increment primary key comment '主键',
+  name varchar(10) comment '姓名',
+  money int comment '余额'
+) comment '账户表';
+
+insert into account values(null,'张三',2000),(null,'李斯',2000);
+
+--查看事务
+select @@autocommit;   -- 如果为1，则表示默认提交，为0，表示手动提交
+set @@autocommit = 0;
+
+-- 提交事务
+commit;
+
+-- 回滚事务
+rollback;
+
+-- 或者
+-- 开启
+start transaction/begin;
+
+-- 提交
+commit;
+
+-- 回滚
+rollback;
 
 
-CREATE TABLE `dept` (
-  `id` int NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `name` varchar(10) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '部门',
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='部门表'
+-- 操作（张三给李斯转1000）
+select @@autocommit; 
+set @@autocommit = 0;
 
+select * from account where name = '张三';
+update account set money = 1000 where name = '张三';
+cheng baocuo...
+update account set money = 3000 where name = '李斯';
 
+commit;
+
+rollback;
+~~~
+
+**事务的四大特性**
+
+- 原子性：事务是最小的操作单元，只有全部成功与全部失败
+- 一致性：事务完成时，必须使所有数据保持一直状态
+- 隔离性：数据库系统提供的隔离机制，保证事务在不受外部并发操作影响的独立环境下运行
+- 持久性：事务一旦提交或者回滚，对数据库中的数据更改是永久的
+
+**并发事务问题**
+
+- 脏读：一个事务读到另一个事务还没有提交的数据（可以通过设置隔离级别，来确定是否读取未提交版本或是快照版本）
+  - 如事务a有update数据库，同时事务b在select，但是此时事务a还没有提交，这就是脏读
+- 不可重复度：一个事务先后读取同一条记录，但两次读取的数据不同
+- - 事务A区读取一条数据，但是在这之后事务B对该数据有修改，如果此时事务A再次读取就会导致结果不一致
+- 一个书屋按条件查询数据时，没有对应的数据行，但是在插入数据后，又发现这行数据已存在，好像出现了幻影
+
+**事务隔离级别**
+
+- Read uncommited： 三个问题都会出现
+- Read commited：脏读问题不会出现
+- Repeattable Read（默认）：只会出现幻读问题
+- Seializable：都不会出现，设置这个level的会话会占住这个锁，其他会话只能等这个会话结束
+
+~~~sql
+-- 查看事务隔离级别
+SELECT @@TRANSACTION_ISOLATION;
+
+-- 设置事务隔离级别
+SET [SESSION | GLOBAL] TRANSACTION ISOLATION LEVEL [事务隔离级别]
 ~~~
 
